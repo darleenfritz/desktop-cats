@@ -9,8 +9,8 @@
       background: transparent;
       overflow: hidden;
     }
-    /* Molly: Pixelbild (32 x 28) doppelt so groß am unteren Bildschirmrand */
-    #cat {
+    /* Beide Katzen: Pixelbilder (32 x 28) doppelt so groß am unteren Bildschirmrand */
+    .cat {
       position: absolute;
       bottom: 0;
       left: 0;
@@ -21,7 +21,8 @@
   </style>
 </head>
 <body>
-  <img id="cat" src="assets/molly_sitzen.png">
+  <img id="malia" class="cat" src="assets/malia_sitzen.png">
+  <img id="molly" class="cat" src="assets/molly_sitzen.png">
   <script src="renderer.js"></script>
 </body>
 </html>
