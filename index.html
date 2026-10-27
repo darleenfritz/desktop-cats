@@ -18,6 +18,22 @@
       height: 56px;
       image-rendering: pixelated;
     }
+    /* Die "z z z" über einer schlafenden Katze */
+    .zz {
+      position: absolute;
+      bottom: 44px;
+      font-family: Menlo, monospace;
+      font-weight: bold;
+      font-size: 14px;
+      color: #6B6560;
+      display: none;
+      animation: float 2.4s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%   { transform: translateY(0);     opacity: 0.2; }
+      50%  { transform: translateY(-8px);  opacity: 1;   }
+      100% { transform: translateY(-16px); opacity: 0;   }
+    }
   </style>
 </head>
 <body>

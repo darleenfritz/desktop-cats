@@ -1,100 +1,336 @@
-// Breite einer Katze in Pixeln (muss zur Breite in index.html passen)
-const CAT_WIDTH = 64;
+// ===== Grundeinstellungen =====
 
-// Bauplan für eine Katze. Jede Katze ist ein Objekt dieser Klasse,
-// nur mit eigenen Werten für Bilder, Tempo und Laune.
+const CAT_WIDTH = 64;  // Breite einer Katze in Pixeln (muss zu index.html passen)
+const FPS = 60;        // requestAnimationFrame läuft mit ca. 60 Bildern pro Sekunde
+
+// Hilfsfunktionen
+const seconds = (s) => Math.round(s * FPS);                 // Sekunden in Bilder umrechnen
+const random = (min, max) => min + Math.random() * (max - min);
+const clampX = (x) => Math.max(0, Math.min(window.innerWidth - CAT_WIDTH, x));
+const isNight = () => {
+  const hour = new Date().getHours();
+  return hour >= 22 || hour < 7;
+};
+
+// Mausposition merken. Dank { forward: true } in main.js kommen die Bewegungen hier an,
+// obwohl Klicks durch das Fenster hindurchgehen.
+const mouse = { x: -1000, y: -1000 };
+document.addEventListener('mousemove', (event) => {
+  mouse.x = event.clientX;
+  mouse.y = event.clientY;
+});
+const mouseNearBottom = () => mouse.y > window.innerHeight - 120;
+
+
+// ===== Bauplan für alle Katzen =====
+
 class Cat {
   constructor(name, options) {
     this.name = name;
-    this.element = document.getElementById(name);   // das <img> mit der passenden ID
+    this.element = document.getElementById(name);
+
+    // "z z z" für den Schlaf als eigenes Element anlegen
+    this.zz = document.createElement('div');
+    this.zz.className = 'zz';
+    this.zz.textContent = 'z z';
+    document.body.appendChild(this.zz);
+
+    // Bilder
     this.sitImage = 'assets/' + name + '_sitzen.png';
-    this.walkImages = [
-      'assets/' + name + '_laufen_1.png',
-      'assets/' + name + '_laufen_2.png',
-      'assets/' + name + '_laufen_3.png',
-      'assets/' + name + '_laufen_2.png',
-    ];
+    this.walkImages = [1, 2, 3, 2].map((n) => 'assets/' + name + '_laufen_' + n + '.png');
+    this.sleepImages = [1, 2].map((n) => 'assets/' + name + '_schlafen_' + n + '.png');
 
     // Persönlichkeit
-    this.speed = options.speed;             // Pixel pro Bild
-    this.sitChance = options.sitChance;     // Wahrscheinlichkeit pro Bild, sich hinzusetzen
-    this.minPause = options.minPause;       // kürzeste Pause in Bildern (60 Bilder = 1 Sekunde)
-    this.maxPause = options.maxPause;       // längste Pause in Bildern
+    this.speed = options.speed;
+    this.weights = options.weights;   // wie gern sie läuft, sitzt oder schläft
+    this.sitTime = options.sitTime;   // [min, max] in Sekunden
+    this.sleepTime = options.sleepTime;
 
     // Zustand
     this.x = options.startX;
-    this.direction = 1;      // 1 = nach rechts, -1 = nach links
-    this.pauseFrames = 0;    // wie viele Bilder die Katze noch stillsitzt
-    this.frameCounter = 0;   // zählt mit, wann das nächste Laufbild dran ist
-    this.walkIndex = 0;      // welches Laufbild gerade angezeigt wird
+    this.direction = 1;       // 1 = schaut nach rechts, -1 = nach links
+    this.state = 'sit';       // 'walk', 'sit', 'sleep' (Molly kann zusätzlich 'zoom' und 'follow')
+    this.timer = seconds(2);  // wie lange der aktuelle Zustand noch dauert
+    this.targetX = null;      // Ziel beim Laufen
+    this.onArrive = null;     // was passiert, wenn das Ziel erreicht ist
+    this.animCounter = 0;
+    this.walkIndex = 0;
+    this.partner = null;      // die andere Katze, wird unten gesetzt
+  }
+
+  // ----- Zustände wechseln -----
+
+  sit(duration) {
+    this.state = 'sit';
+    this.timer = seconds(duration);
+  }
+
+  sleep(duration) {
+    this.state = 'sleep';
+    this.timer = seconds(duration);
+  }
+
+  walkTo(x, onArrive) {
+    this.state = 'walk';
+    this.targetX = clampX(x);
+    this.onArrive = onArrive || (() => this.sit(random(this.sitTime[0], this.sitTime[1])));
+  }
+
+  // Ein Platz direkt neben der anderen Katze
+  spotNextToPartner() {
+    const side = this.x < this.partner.x ? -1 : 1;
+    let spot = this.partner.x + side * 52;
+    if (spot < 0 || spot > window.innerWidth - CAT_WIDTH) {
+      spot = this.partner.x - side * 52;  // auf der anderen Seite ist mehr Platz
+    }
+    return spot;
+  }
+
+  facePartner() {
+    this.direction = this.partner.x > this.x ? 1 : -1;
+  }
+
+  distanceToPartner() {
+    return Math.abs(this.x - this.partner.x);
+  }
+
+  // Wird aufgerufen, wenn ein Zustand vorbei ist: Was mache ich als Nächstes?
+  decide() {
+    let { walk, sit, sleep } = this.weights;
+    if (isNight()) sleep = sleep * 4;   // nachts wird mehr geschlafen
+    const roll = Math.random() * (walk + sit + sleep);
+
+    if (roll < walk) {
+      this.walkTo(random(0, window.innerWidth));
+    } else if (roll < walk + sit) {
+      this.sit(random(this.sitTime[0], this.sitTime[1]));
+    } else {
+      this.sleep(random(this.sleepTime[0], this.sleepTime[1]));
+    }
+  }
+
+  // ----- Jedes Bild -----
+
+  update() {
+    if (this.state === 'walk') {
+      this.moveTowardTarget(this.speed);
+    } else {
+      this.timer = this.timer - 1;
+      if (this.timer <= 0) this.decide();
+    }
+    this.render();
+  }
+
+  moveTowardTarget(speed) {
+    const distance = this.targetX - this.x;
+    if (Math.abs(distance) <= speed) {
+      this.x = this.targetX;
+      this.onArrive();
+      return;
+    }
+    this.direction = distance > 0 ? 1 : -1;
+    this.x = this.x + speed * this.direction;
+    this.animate(speed);
+  }
+
+  // Laufbilder durchwechseln, schnellere Katzen bewegen die Beine schneller
+  animate(speed) {
+    this.animCounter = this.animCounter + speed;
+    if (this.animCounter >= 15) {
+      this.animCounter = 0;
+      this.walkIndex = (this.walkIndex + 1) % this.walkImages.length;
+    }
+  }
+
+  isMoving() {
+    return this.state === 'walk' || this.state === 'zoom' || (this.state === 'follow' && this.followMoving);
+  }
+
+  render() {
+    let image;
+    let flip = this.direction;
+
+    if (this.isMoving()) {
+      image = this.walkImages[this.walkIndex];
+    } else if (this.state === 'sleep') {
+      // langsames Atmen: alle 1,2 Sekunden zwischen zwei Bildern wechseln
+      const breath = Math.floor(Date.now() / 1200) % 2;
+      image = this.sleepImages[breath];
+    } else {
+      image = this.sitImage;
+      flip = 1;  // das Sitzbild schaut nach vorne und wird nicht gespiegelt
+    }
+
+    // src nur ändern, wenn sich das Bild wirklich ändert (spart Arbeit)
+    if (!this.element.src.endsWith(image)) this.element.src = image;
+    this.element.style.transform = 'scaleX(' + flip + ')';
+    this.element.style.left = this.x + 'px';
+
+    // "z z" über dem Kopf anzeigen, wenn sie schläft
+    this.zz.style.display = this.state === 'sleep' ? 'block' : 'none';
+    this.zz.style.left = (this.x + (this.direction === 1 ? 40 : 4)) + 'px';
+  }
+}
+
+
+// ===== Malia: gemütlich, mag Nähe nur, wenn sie selbst will =====
+
+class Malia extends Cat {
+  constructor() {
+    super('malia', {
+      speed: 0.8,
+      weights: { walk: 3, sit: 4, sleep: 4 },
+      sitTime: [4, 12],
+      sleepTime: [20, 60],
+      startX: 100,
+    });
+    this.cuddleNeed = 0;       // 0 = will ihre Ruhe, 1 = will kuscheln
+    this.avoidCooldown = 0;    // damit sie nicht ständig hin und her flüchtet
   }
 
   update() {
-    if (this.pauseFrames > 0) {
-      this.sit();
+    // Das Kuschelbedürfnis steigt langsam (in ca. 2 Minuten von 0 auf 1)
+    this.cuddleNeed = Math.min(1, this.cuddleNeed + 1 / seconds(120));
+    if (this.avoidCooldown > 0) this.avoidCooldown = this.avoidCooldown - 1;
+
+    const mollyIsClose = this.distanceToPartner() < 80;
+    const resting = this.state === 'sit' || this.state === 'sleep';
+
+    if (mollyIsClose && resting) {
+      if (this.cuddleNeed < 0.5 && this.avoidCooldown === 0) {
+        // Keine Lust auf Nähe: nach kurzem Zögern aufstehen und weggehen
+        if (Math.random() < 0.01) {
+          const away = this.x < this.partner.x ? -1 : 1;
+          this.walkTo(this.x + away * random(250, 450));
+          this.avoidCooldown = seconds(15);
+        }
+      } else if (this.state === 'sleep' && this.partner.state === 'sleep') {
+        // Kuscheln: das Bedürfnis wird langsam gestillt
+        this.cuddleNeed = Math.max(0, this.cuddleNeed - 1 / seconds(40));
+      }
+    }
+
+    super.update();
+  }
+
+  decide() {
+    if (this.cuddleNeed > 0.9) {
+      // Jetzt will sie selbst Nähe: zu Molly gehen und sich dazulegen
+      this.walkTo(this.spotNextToPartner(), () => {
+        this.facePartner();
+        this.sleep(random(30, 60));
+      });
     } else {
-      this.walk();
-    }
-    this.element.style.left = this.x + 'px';
-  }
-
-  sit() {
-    this.pauseFrames = this.pauseFrames - 1;
-    this.element.src = this.sitImage;
-    this.element.style.transform = 'scaleX(1)';
-  }
-
-  walk() {
-    this.x = this.x + this.speed * this.direction;
-
-    // Am Rand umdrehen
-    if (this.x > window.innerWidth - CAT_WIDTH) {
-      this.x = window.innerWidth - CAT_WIDTH;
-      this.direction = -1;
-    }
-    if (this.x < 0) {
-      this.x = 0;
-      this.direction = 1;
-    }
-
-    // Laufbilder durchwechseln. Langsame Katzen bewegen die Beine langsamer.
-    this.frameCounter = this.frameCounter + this.speed;
-    if (this.frameCounter >= 15) {
-      this.frameCounter = 0;
-      this.walkIndex = (this.walkIndex + 1) % this.walkImages.length;
-    }
-    this.element.src = this.walkImages[this.walkIndex];
-    this.element.style.transform = 'scaleX(' + this.direction + ')';
-
-    // Ab und zu hinsetzen
-    if (Math.random() < this.sitChance) {
-      const range = this.maxPause - this.minPause;
-      this.pauseFrames = this.minPause + Math.floor(Math.random() * range);
+      super.decide();
     }
   }
 }
 
-// Malia: gemütlich, langsam, setzt sich oft und lange hin
-const malia = new Cat('malia', {
-  speed: 0.8,
-  sitChance: 0.008,
-  minPause: 180,   // 3 Sekunden
-  maxPause: 600,   // 10 Sekunden
-  startX: 100,
-});
 
-// Molly: verspielt, schnell, sitzt nur kurz
-const molly = new Cat('molly', {
-  speed: 2,
-  sitChance: 0.004,
-  minPause: 60,    // 1 Sekunde
-  maxPause: 180,   // 3 Sekunden
-  startX: 400,
-});
+// ===== Molly: verspielt, tobt, sucht Nähe =====
+
+class Molly extends Cat {
+  constructor() {
+    super('molly', {
+      speed: 2,
+      weights: { walk: 5, sit: 2, sleep: 2 },
+      sitTime: [1, 4],
+      sleepTime: [15, 40],
+      startX: 400,
+    });
+    this.energy = 0;          // steigt, wenn sie wach ist; bei 1 wird getobt
+    this.followMoving = false;
+  }
+
+  update() {
+    // Energie sammeln, solange sie wach ist (ca. 45 Sekunden bis zum Toben)
+    if (this.state !== 'sleep') {
+      this.energy = Math.min(1, this.energy + 1 / seconds(45));
+    }
+
+    // Toben, wenn die Energie voll ist
+    if (this.energy >= 1 && this.state !== 'zoom' && this.state !== 'sleep') {
+      this.state = 'zoom';
+      this.timer = seconds(random(3, 5));
+    }
+
+    // Maus unten am Bildschirm? Dann hinterher!
+    if (mouseNearBottom() && (this.state === 'walk' || this.state === 'sit')) {
+      this.state = 'follow';
+    }
+
+    if (this.state === 'zoom') {
+      this.zoom();
+      this.render();
+    } else if (this.state === 'follow') {
+      this.follow();
+      this.render();
+    } else {
+      super.update();
+    }
+  }
+
+  zoom() {
+    const zoomSpeed = 6;
+    this.x = this.x + zoomSpeed * this.direction;
+    // Am Rand oder einfach mal so umdrehen
+    if (this.x <= 0 || this.x >= window.innerWidth - CAT_WIDTH || Math.random() < 0.02) {
+      this.direction = -this.direction;
+    }
+    this.x = clampX(this.x);
+    this.animate(zoomSpeed);
+
+    this.timer = this.timer - 1;
+    if (this.timer <= 0) {
+      // Erschöpft: Energie leer, erst mal hinlegen
+      this.energy = 0;
+      this.sleep(random(10, 25));
+    }
+  }
+
+  follow() {
+    if (!mouseNearBottom()) {
+      this.followMoving = false;
+      this.sit(random(1, 3));
+      return;
+    }
+    const target = clampX(mouse.x - CAT_WIDTH / 2);
+    const distance = target - this.x;
+    this.followMoving = Math.abs(distance) > 6;
+    if (this.followMoving) {
+      this.direction = distance > 0 ? 1 : -1;
+      this.x = this.x + this.speed * 1.3 * this.direction;
+      this.animate(this.speed * 1.3);
+    }
+  }
+
+  decide() {
+    // Oft geht Molly von sich aus zu Malia
+    if (Math.random() < 0.35) {
+      this.walkTo(this.spotNextToPartner(), () => {
+        this.facePartner();
+        if (this.partner.state === 'sleep') {
+          this.sleep(random(15, 40));   // Malia schläft: dazulegen
+        } else {
+          this.sit(random(2, 5));       // Malia ist wach: daneben sitzen
+        }
+      });
+    } else {
+      super.decide();
+    }
+  }
+}
+
+
+// ===== Start =====
+
+const malia = new Malia();
+const molly = new Molly();
+malia.partner = molly;
+molly.partner = malia;
 
 const cats = [malia, molly];
 
-// Eine gemeinsame Schleife für alle Katzen
 function loop() {
   for (const cat of cats) {
     cat.update();
