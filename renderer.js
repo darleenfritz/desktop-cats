@@ -14,10 +14,11 @@ const isNight = () => {
 
 // Mausposition merken. Dank { forward: true } in main.js kommen die Bewegungen hier an,
 // obwohl Klicks durch das Fenster hindurchgehen.
-const mouse = { x: -1000, y: -1000 };
+const mouse = { x: -1000, y: -1000, lastMove: 0 };
 document.addEventListener('mousemove', (event) => {
   mouse.x = event.clientX;
   mouse.y = event.clientY;
+  mouse.lastMove = Date.now();   // wann die Maus zuletzt bewegt wurde
 });
 const mouseNearBottom = () => mouse.y > window.innerHeight - 120;
 
@@ -56,6 +57,39 @@ class Cat {
     this.animCounter = 0;
     this.walkIndex = 0;
     this.partner = null;      // die andere Katze, wird unten gesetzt
+    this.pettedFrames = 0;    // > 0, solange sie gerade gestreichelt wird
+    this.heartCounter = 0;
+  }
+
+  // ----- Streicheln -----
+
+  // Gestreichelt wird, wenn die Maus über der Katze ist und sich bewegt
+  isBeingPetted() {
+    const overCat = mouse.x >= this.x && mouse.x <= this.x + CAT_WIDTH &&
+      mouse.y >= window.innerHeight - 56;
+    const moving = Date.now() - mouse.lastMove < 150;
+    return overCat && moving;
+  }
+
+  enjoyPetting() {
+    this.pettedFrames = seconds(0.5);
+    if (this.state !== 'sleep') {
+      this.state = 'sit';          // stillhalten und genießen
+      this.timer = seconds(2);     // danach noch kurz sitzen bleiben
+    }
+    // Ungefähr viermal pro Sekunde ein Herz aufsteigen lassen
+    this.heartCounter = this.heartCounter + 1;
+    if (this.heartCounter % 15 === 0) this.showEffect('♥', 'heart');
+  }
+
+  // Kleines Symbol, das über der Katze aufsteigt und verschwindet
+  showEffect(text, className) {
+    const effect = document.createElement('div');
+    effect.className = 'effect ' + className;
+    effect.textContent = text;
+    effect.style.left = (this.x + 24 + random(-12, 12)) + 'px';
+    document.body.appendChild(effect);
+    setTimeout(() => effect.remove(), 1200);
   }
 
   // ----- Zustände wechseln -----
@@ -112,6 +146,7 @@ class Cat {
   // ----- Jedes Bild -----
 
   update() {
+    if (this.pettedFrames > 0) this.pettedFrames = this.pettedFrames - 1;
     if (this.state === 'walk') {
       this.moveTowardTarget(this.speed);
     } else {
@@ -173,6 +208,9 @@ class Cat {
 
   // Text für die Menüleiste
   label() {
+    if (this.pettedFrames > 0) {
+      return 'wird gestreichelt 😻';
+    }
     if (this.state === 'sleep' && this.partner.state === 'sleep' && this.distanceToPartner() < 80) {
       return 'kuschelt 💕';
     }
@@ -207,6 +245,22 @@ class Malia extends Cat {
     // Das Kuschelbedürfnis steigt langsam (in ca. 2 Minuten von 0 auf 1)
     this.cuddleNeed = Math.min(1, this.cuddleNeed + 1 / seconds(120));
     if (this.avoidCooldown > 0) this.avoidCooldown = this.avoidCooldown - 1;
+
+    // Streicheln: nur, wenn sie gerade Lust auf Nähe hat
+    if (this.isBeingPetted() && this.state !== 'walk') {
+      if (this.cuddleNeed >= 0.4) {
+        this.enjoyPetting();
+        this.cuddleNeed = Math.max(0, this.cuddleNeed - 1 / seconds(20));
+        super.update();
+        return;
+      } else if (this.avoidCooldown === 0) {
+        // Keine Lust: kurz grummeln und weggehen
+        this.showEffect('hmpf', 'grumble');
+        const away = mouse.x < this.x + CAT_WIDTH / 2 ? 1 : -1;
+        this.walkTo(this.x + away * random(200, 350));
+        this.avoidCooldown = seconds(5);
+      }
+    }
 
     const mollyIsClose = this.distanceToPartner() < 80;
     const resting = this.state === 'sit' || this.state === 'sleep';
@@ -261,6 +315,13 @@ class Molly extends Cat {
     // Energie sammeln, solange sie wach ist (ca. 45 Sekunden bis zum Toben)
     if (this.state !== 'sleep') {
       this.energy = Math.min(1, this.energy + 1 / seconds(45));
+    }
+
+    // Streicheln mag Molly immer (außer beim Toben, da ist sie zu schnell)
+    if (this.isBeingPetted() && this.state !== 'zoom') {
+      this.enjoyPetting();
+      super.update();
+      return;
     }
 
     // Toben, wenn die Energie voll ist

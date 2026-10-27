@@ -34,6 +34,26 @@
       50%  { transform: translateY(-8px);  opacity: 1;   }
       100% { transform: translateY(-16px); opacity: 0;   }
     }
+    /* Herzen und "hmpf" beim Streicheln: steigen auf und verblassen */
+    .effect {
+      position: absolute;
+      bottom: 50px;
+      font-family: Menlo, monospace;
+      font-weight: bold;
+      animation: rise 1.2s ease-out forwards;
+    }
+    .heart {
+      color: #E5739B;
+      font-size: 18px;
+    }
+    .grumble {
+      color: #6B6560;
+      font-size: 13px;
+    }
+    @keyframes rise {
+      0%   { transform: translateY(0);     opacity: 1; }
+      100% { transform: translateY(-30px); opacity: 0; }
+    }
   </style>
 </head>
 <body>
