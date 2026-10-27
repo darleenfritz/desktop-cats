@@ -9,19 +9,19 @@
       background: transparent;
       overflow: hidden;
     }
-    /* Platzhalter für Molly: ein cremefarbenes Viereck am unteren Bildschirmrand */
+    /* Molly: Pixelbild (32 x 28) doppelt so groß am unteren Bildschirmrand */
     #cat {
       position: absolute;
       bottom: 0;
       left: 0;
-      width: 48px;
-      height: 54px;
-      background: #D8C6B0;
+      width: 64px;
+      height: 56px;
+      image-rendering: pixelated;
     }
   </style>
 </head>
 <body>
-  <div id="cat"></div>
+  <img id="cat" src="assets/molly_sitzen.png">
   <script src="renderer.js"></script>
 </body>
 </html>
