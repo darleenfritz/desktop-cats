@@ -170,6 +170,21 @@ class Cat {
     this.zz.style.display = this.state === 'sleep' ? 'block' : 'none';
     this.zz.style.left = (this.x + (this.direction === 1 ? 40 : 4)) + 'px';
   }
+
+  // Text für die Menüleiste
+  label() {
+    if (this.state === 'sleep' && this.partner.state === 'sleep' && this.distanceToPartner() < 80) {
+      return 'kuschelt 💕';
+    }
+    const texts = {
+      walk: 'läuft herum',
+      sit: 'sitzt',
+      sleep: 'schläft 💤',
+      zoom: 'tobt ⚡',
+      follow: 'jagt die Maus 🐭',
+    };
+    return texts[this.state];
+  }
 }
 
 
@@ -331,10 +346,22 @@ molly.partner = malia;
 
 const cats = [malia, molly];
 
+let frame = 0;
+
 function loop() {
   for (const cat of cats) {
     cat.update();
   }
+
+  // Zweimal pro Sekunde die Stimmung an die Menüleiste schicken
+  frame = frame + 1;
+  if (window.catsAPI && frame % 30 === 0) {
+    window.catsAPI.sendStatus({
+      malia: { label: malia.label(), cuddleNeed: malia.cuddleNeed },
+      molly: { label: molly.label(), energy: molly.energy },
+    });
+  }
+
   requestAnimationFrame(loop);
 }
 
