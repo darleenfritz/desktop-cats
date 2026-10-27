@@ -4,13 +4,14 @@
   "description": "",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
-  },
+  "start": "electron .",
+  "package": "electron-packager . \"Desktop Cats\" --out=dist --overwrite --ignore=^/dist --icon=assets/icon.icns"  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@electron/packager": "^20.3.0",
     "electron": "^45.0.0"
   }
 }
